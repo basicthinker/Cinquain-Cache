@@ -1,3 +1,4 @@
+*.tmproj
 tags
 *.1
 *.o

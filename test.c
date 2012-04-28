@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012 Yang Zhang <yang.zhang@stanzax.org>
+ * Copyright (C) 2012 Yang Zhang <santa@yzhang.net>
  * Copyright (C) 2012 Jinglei Ren <jinglei.ren@stanzax.org>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -24,10 +24,12 @@
 //  Modified by Yang Zhang.
 //
 
-
 #include <stdio.h>
+
 #include "cinq_cache.h"
 
 int main(int argc, const char *argv[]) {
-  return 0;
+    printf("This shall be done!\n");
+    return 0;
 }
+
