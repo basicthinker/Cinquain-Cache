@@ -41,6 +41,10 @@ typedef unsigned long offset_t;
 
 #define FINGERPRINT_BYTES 16
 
+// Either users or the internal should use the predefined malloc/free functions.
+#define MALLOC(n) malloc(n)
+#define FREE(p) free(p)
+
 struct fingerprint {
 	unsigned long uid; // denotes who makes request
 	char value[FINGERPRINT_BYTES];
@@ -58,17 +62,36 @@ struct data_set {
 	struct list_head entries;
 };
 
-
+// helper function to free memory usage of a data_set
 void free_data_set(struct data_set* ds);
 
-struct data_set *rcache_get(struct fingerprint *fp, offset_t offset, offset_t len);
-struct data_set *rcache_put(struct fingerprint *fp, struct data_entry *de);
-
-struct data_set *wcache_get(struct fingerprint *fp, offset_t offset, offset_t len);
-struct data_set *wcache_put(struct fingerprint *fp, struct data_entry *de);
-struct data_set *wcache_collect(struct fingerprint *fp);
-
+// init cache system
 void rwcache_init();
+
+// finalize cache system
 void rwcache_fini();
 
-#endif // CINQAIN_CACHE_H
+// Returns data set sorted by offsets of its entries without overlaps.
+// Users take charge of deallocation of returned data.
+extern struct data_set *rcache_get(struct fingerprint *fp, offset_t offset, offset_t len);
+
+// Add previous non-hit data.
+// Data input are SAFE to free by users after the function returns.
+extern void rcache_put(struct fingerprint *fp, struct data_entry *de);
+
+// Returns data set sorted by offsets of its entries without overlaps.
+// Users should NOT deallocate returned data.
+// They are SAFE to use until wcache_collect() is invoked.
+extern struct data_set *wcache_read(struct fingerprint *fp, offset_t offset, offset_t len);
+
+// Data input are SAFE to free by users after the function returns.
+extern int wcache_write(struct fingerprint *fp, struct data_entry *de); 
+
+// Returns data set sorted by offsets of its entries without overlaps.
+// Users take charge of deallocation of returned data.
+extern struct data_set *wcache_collect(struct fingerprint *fp);
+
+// Invoked when changing a temporary fingerprint to a permanent one.
+extern int wcache_move(struct fingerprint *old_fp, struct fingerprint *new_fp);
+
+#endif // CINQAIN_CACHE_H_
