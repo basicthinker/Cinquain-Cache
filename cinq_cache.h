@@ -40,6 +40,10 @@ typedef unsigned long offset_t;
 
 #define FINGERPRINT_BYTES 16
 
+// Either users or the internal should use the predefined malloc/free functions.
+#define MALLOC(n) malloc(n)
+#define FREE(p) free(p)
+
 struct fingerprint {
   unsigned long uid; // denotes who makes request
   char value[FINGERPRINT_BYTES];
@@ -57,24 +61,28 @@ struct data_set {
   struct list_head entries;
 };
 
-// Returns data set sorted by offsets of its entries.
-// Data set may include recently written data owned by the request uid.
-// Consistency is NOT guaranteed.
-extern struct data_set *ccache_read(struct fingerprint *fp, offset_t offset, offset_t len);
+// Returns data set sorted by offsets of its entries without overlaps.
+// Users take charge of deallocation of returned data.
+extern struct data_set *rcache_get(struct fingerprint *fp, offset_t offset, offset_t len);
 
 // Add previous non-hit data.
-// NOT written data, and can be directly put into read cache.
-extern void ccache_put(struct fingerprint *fp, struct data_entry *de);
+// Data input are SAFE to free by users after the function returns.
+extern void rcache_put(struct fingerprint *fp, struct data_entry *de);
 
-// Provided data entry is subject to deallocation afterwards.
-extern int ccache_write(struct fingerprint *fp, struct data_entry *de); 
+// Returns data set sorted by offsets of its entries without overlaps.
+// Users should NOT deallocate returned data.
+// They are SAFE to use until wcache_collect() is invoked.
+extern struct data_set *wcache_read(struct fingerprint *fp, offset_t offset, offset_t len);
 
-// Returns all WRITE cache of the specified file.
-// Invoked when the file is flushed or closed.
-// Data entries are sorted by offsets, and have NO overlaps.
-extern struct data_set *ccache_collect(struct fingerprint *fp);
+// Data input are SAFE to free by users after the function returns.
+extern int wcache_write(struct fingerprint *fp, struct data_entry *de); 
+
+// Returns data set sorted by offsets of its entries without overlaps.
+// Users take charge of deallocation of returned data.
+extern struct data_set *wcache_collect(struct fingerprint *fp);
 
 // Invoked when changing a temporary fingerprint to a permanent one.
-extern int ccache_move(struct fingerprint *old_fp, struct fingerprint *new_fp);
+extern int wcache_move(struct fingerprint *old_fp, struct fingerprint *new_fp);
 
-#endif // CINQAIN_CACHE_H
+#endif // CINQAIN_CACHE_H_
+
