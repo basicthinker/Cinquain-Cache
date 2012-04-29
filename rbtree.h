@@ -96,6 +96,11 @@ static inline struct page * rb_insert_page_cache(struct inode * inode,
 
 #include "stddef.h"
 
+#ifndef container_of
+#define container_of(ptr, type, member) \
+	((type *)((char *)(ptr)-(unsigned long)(&((type *)0)->member)))
+#endif // container_of
+
 struct rb_node
 {
 	unsigned long  rb_parent_color;

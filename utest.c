@@ -30,6 +30,11 @@
 
 int main(int argc, const char *argv[]) {
     printf("This shall be done!\n");
+    
+    rwcache_init();
+    
+    rwcache_fini();
+    
     return 0;
 }
 

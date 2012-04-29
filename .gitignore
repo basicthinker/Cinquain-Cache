@@ -1,5 +1,7 @@
 *.tmproj
 tags
+*.ko
+utest
 *.1
 *.o
 *.o.*

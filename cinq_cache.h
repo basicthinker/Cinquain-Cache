@@ -27,12 +27,25 @@
 #ifndef CINQUAIN_CACHE_H_
 #define CINQUAIN_CACHE_H_
 
-#ifndef __KERNEL__
+
+
+#ifdef __KERNEL__
+#include <linux/list.h>
+#include <linux/slab.h>
+
+// Either users or the internal should use the predefined malloc/free functions.
+#define ALLOC(nbytes)   kmalloc(nbytes, GFP_KERNEL)
+#define FREE(ptr)       kfree(ptr)
+
+#else
 #include <stddef.h> // for NULL
 #include "list.h"
-#else
-#include <linux/list.h>
+
+#define ALLOC(nbytes)   malloc(nbytes)
+#define FREE(ptr)       free(ptr)
+
 #endif // __KERNEL__
+
 
 #ifndef OFFSET_T_
 typedef unsigned long offset_t;
@@ -41,9 +54,6 @@ typedef unsigned long offset_t;
 
 #define FINGERPRINT_BYTES 16
 
-// Either users or the internal should use the predefined malloc/free functions.
-#define MALLOC(n) malloc(n)
-#define FREE(p) free(p)
 
 struct fingerprint {
 	unsigned long uid; // denotes who makes request
@@ -62,7 +72,7 @@ struct data_set {
 	struct list_head entries;
 };
 
-// helper function to free memory usage of a data_set
+// helper function to free memory used by a data_set
 void free_data_set(struct data_set* ds);
 
 // init cache system
@@ -91,7 +101,5 @@ extern int wcache_write(struct fingerprint *fp, struct data_entry *de);
 // Users take charge of deallocation of returned data.
 extern struct data_set *wcache_collect(struct fingerprint *fp);
 
-// Invoked when changing a temporary fingerprint to a permanent one.
-extern int wcache_move(struct fingerprint *old_fp, struct fingerprint *new_fp);
 
 #endif // CINQAIN_CACHE_H_
