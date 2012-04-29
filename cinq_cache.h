@@ -73,7 +73,8 @@ struct data_set {
 };
 
 // helper function to free memory used by a data_set
-void free_data_set(struct data_set* ds);
+// if free_data is not 0, all 'data' field in ds will be FREE'ed
+void free_data_set(struct data_set* ds, int free_data);
 
 // init cache system
 void rwcache_init();
