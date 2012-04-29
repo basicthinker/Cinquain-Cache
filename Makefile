@@ -5,13 +5,16 @@ CFLAGS=$(CFLAGS_debug)
 
 all: runtest
 
-test: test.o cinq_cache.o
+test: test.o cinq_cache.o rbtree.o
 	$(CC) $(CFLAGS) $^ -o $@
 
 test.o: test.c cinq_cache.h
 	$(CC) $(CFLAGS) $< -c -o $@
 
 cinq_cache.o: cinq_cache.c cinq_cache.h
+	$(CC) $(CFLAGS) $< -c -o $@
+
+rbtree.o: rbtree.c rbtree.h
 	$(CC) $(CFLAGS) $< -c -o $@
 
 runtest: test
