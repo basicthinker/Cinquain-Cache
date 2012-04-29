@@ -62,7 +62,7 @@ struct fingerprint {
 
 // Readonly chunck of dat.
 struct data_entry {
-	const char *data;
+	char *data;
 	offset_t offset;
 	offset_t len;
 	struct list_head entry;

@@ -100,6 +100,20 @@ static struct rb_root* hash_find(struct list_head* htab, struct fingerprint *fpn
 }
 
 
+void free_data_set(struct data_set* ds) {
+    struct list_head *cur, *tmp;
+    
+    list_for_each_safe(cur, tmp, &(ds->entries)) {
+        struct data_entry* de = list_entry(cur, struct data_entry, entry);
+        list_del(&(de->entry));
+        FREE(de->data);
+        FREE(de);
+    }
+    
+    // release the data set itself
+    FREE(ds);
+}
+
 // Returns data set sorted by offsets of its entries without overlaps.
 // Users take charge of deallocation of returned data.
 struct data_set *wcache_collect(struct fingerprint *fp) {
