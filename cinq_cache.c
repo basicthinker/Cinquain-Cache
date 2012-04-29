@@ -13,6 +13,12 @@ typedef spinlock_t lock_t;
 
 #else // userspace
 
+#ifdef __APPLE__
+#include <stdlib.h>
+#else
+#include <malloc.h>
+#endif // __APPLE__
+
 #include <pthread.h>
 #include "rbtree.h"
 
@@ -25,9 +31,11 @@ typedef pthread_mutex_t lock_t;
 #endif // __KERNEL__
 
 
+
+
 // rbtree node containing data
 struct mynode {
-    const char *data;
+    char *data;
     offset_t offset;
     offset_t len;
     struct rb_node node;
@@ -45,6 +53,11 @@ struct hash_entry {
 // number of hash slots
 #define N_SLOT 1024
 
+
+// input: fingerprint, return: the slot possibly containing the hash entry
+#define fp_slot(fpnt)     ((*((int *)((fpnt).value + 4))) % N_SLOT)
+
+
 // write cache, using a linked hash
 static struct list_head wcache[N_SLOT];
 
@@ -61,6 +74,68 @@ void rwcache_init() {
     }
 }
 
+
+static int fpnt_eql(struct fingerprint* fpnt1, struct fingerprint* fpnt2) {
+    int i;
+    for (i = 0; i < FINGERPRINT_BYTES; i++) {
+        if (fpnt1->value[i] != fpnt2->value[i]) {
+            return 0;
+        }
+    }
+    // TODO: what about UID?
+    return 1;
+}
+
+
+static struct rb_root* hash_find(struct list_head* htab, struct fingerprint *fpnt) {
+    struct list_head* slot_list = &htab[fp_slot(*fpnt)];
+    struct list_head *cur, *tmp;
+    list_for_each_safe(cur, tmp, slot_list) {
+        struct hash_entry* he = list_entry(cur, struct hash_entry, entry);
+        if (fpnt_eql(&(he->fpnt), fpnt)) {
+            return &(he->root);
+        }
+    }
+    return NULL;
+}
+
+
+// Returns data set sorted by offsets of its entries without overlaps.
+// Users take charge of deallocation of returned data.
+struct data_set *wcache_collect(struct fingerprint *fp) {
+    struct data_set* dset = NULL;
+    struct rb_root* rbroot = hash_find(wcache, fp);
+    
+    if (rbroot == NULL) {
+        // nothing found, return NULL
+        return NULL;
+    }
+    
+    dset = (struct data_set *) ALLOC(sizeof(struct data_set));
+    INIT_LIST_HEAD(&(dset->entries));
+    
+    // release all the rbtree nodes (nodes only, all data have been transfered)
+    for (;;) {
+        struct rb_node* first = rb_first(rbroot);
+        if (first == NULL) {
+            break;
+        }
+        rb_erase(first, rbroot);
+        
+        struct mynode *node = rb_entry(first, struct mynode, node);
+        // don't FREE(node->data) here, all data have been transfered
+        
+        struct data_entry *de = (struct data_entry *) ALLOC(sizeof(struct data_entry));
+        de->data = node->data;
+        de->offset = node->offset;
+        de->len = node->len;
+        list_add(&(de->entry), &(dset->entries));
+        
+        FREE(node);
+    }
+    
+    return dset;
+}
 
 
 

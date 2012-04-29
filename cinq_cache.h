@@ -95,10 +95,11 @@ extern void rcache_put(struct fingerprint *fp, struct data_entry *de);
 extern struct data_set *wcache_read(struct fingerprint *fp, offset_t offset, offset_t len);
 
 // Data input are SAFE to free by users after the function returns.
-extern int wcache_write(struct fingerprint *fp, struct data_entry *de); 
+extern int wcache_write(struct fingerprint *fp, struct data_entry *de);
 
 // Returns data set sorted by offsets of its entries without overlaps.
 // Users take charge of deallocation of returned data.
+// Return NULL if nothing found.
 extern struct data_set *wcache_collect(struct fingerprint *fp);
 
 
