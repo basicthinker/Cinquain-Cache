@@ -155,12 +155,6 @@ struct data_set *wcache_collect(struct fingerprint *fp) {
 }
 
 
-struct data_set *wcache_read(struct fingerprint *fp, offset_t offset, offset_t len) {
-    struct data_set* dset = NULL;
-    
-    return dset;
-}
-
 
 // find the first overlap in range [offset, offset + len)
 // return NULL if not found
@@ -170,10 +164,10 @@ static struct mynode* first_overlap(struct rb_root* root, offset_t offset, offse
     while (n) {
         struct mynode* my = container_of(n, struct mynode, node);
         
-        if (offset + len <= my->offset + my->len) {
+        if (offset + len <= my->offset) {
             // go left
             n = n->rb_left;
-        } else if (my->offset + my->len <= offset + len) {
+        } else if (my->offset + my->len <= offset) {
             // go right
             n = n->rb_right;
         } else {
@@ -185,6 +179,42 @@ static struct mynode* first_overlap(struct rb_root* root, offset_t offset, offse
     return ret;
 }
 
+
+
+struct data_set *wcache_read(struct fingerprint *fp, offset_t offset, offset_t len) {
+    struct data_set* dset = NULL;
+    struct rb_root* rbroot = hash_find(wcache, fp);
+    
+    if (rbroot == NULL) {
+        // nothing found, return NULL
+        return NULL;
+    }
+    
+    dset = (struct data_set *) ALLOC(sizeof(struct data_set));
+    INIT_LIST_HEAD(&(dset->entries));
+    
+    struct mynode* my = first_overlap(rbroot, offset, len);
+    while (my) {
+        
+        if (offset + len <= my->offset) {
+            break;
+        }
+        
+        struct data_entry *de = (struct data_entry *) ALLOC(sizeof(struct data_entry));
+        de->data = my->data;
+        de->offset = my->offset;
+        de->len = my->len;
+        list_add(&(de->entry), &(dset->entries));
+        
+        struct rb_node* next = rb_next(&(my->node));
+        my = container_of(next, struct mynode, node);
+    }
+    
+    return dset;
+}
+
+
+
 static int wcache_insert_data(struct rb_root *root, offset_t offset, offset_t len, char* data) {
     struct rb_node **new = &(root->rb_node), *parent = NULL;
 
@@ -193,9 +223,9 @@ static int wcache_insert_data(struct rb_root *root, offset_t offset, offset_t le
 		struct mynode *this = container_of(*new, struct mynode, node);
 
 		parent = *new;
-		if (offset + len <= this->offset + this->len)
+		if (offset + len <= this->offset)
 			new = &((*new)->rb_left);
-		else if (this->offset + this->len <= offset + len)
+		else if (this->offset + this->len <= offset)
 			new = &((*new)->rb_right);
 		else
 			return -1;
