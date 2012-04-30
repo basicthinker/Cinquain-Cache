@@ -34,20 +34,23 @@ typedef pthread_mutex_t lock_t;
 
 
 
+struct hash_entry {
+    struct fingerprint fpnt;
+    struct list_head entry;
+    struct rb_root root;
+};
+
+
+
+
 // rbtree node containing data
 struct mynode {
     char *data;
     offset_t offset;
     offset_t len;
     struct rb_node node;
+    struct hash_entry* h_entry;
     struct list_head lru_entry; // used by LRU on R-cache
-};
-
-
-struct hash_entry {
-    struct fingerprint fpnt;
-    struct list_head entry;
-    struct rb_root root;
 };
 
 
@@ -95,13 +98,13 @@ static int fpnt_eql(struct fingerprint* fpnt1, struct fingerprint* fpnt2) {
 }
 
 
-static struct rb_root* hash_find(struct list_head* htab, struct fingerprint *fpnt) {
+static struct hash_entry* hash_find(struct list_head* htab, struct fingerprint *fpnt) {
     struct list_head* slot_list = &htab[fp_slot(*fpnt)];
     struct list_head *cur, *tmp;
     list_for_each_safe(cur, tmp, slot_list) {
         struct hash_entry* he = list_entry(cur, struct hash_entry, entry);
         if (fpnt_eql(&(he->fpnt), fpnt)) {
-            return &(he->root);
+            return he;
         }
     }
     return NULL;
@@ -128,12 +131,14 @@ void free_data_set(struct data_set* ds, int free_data) {
 // Users take charge of deallocation of returned data.
 struct data_set *wcache_collect(struct fingerprint *fp) {
     struct data_set* dset = NULL;
-    struct rb_root* rbroot = hash_find(wcache, fp);
-    
-    if (rbroot == NULL) {
+    struct hash_entry* he = hash_find(wcache, fp);
+
+    if (he == NULL) {
         // nothing found, return NULL
         return NULL;
     }
+    
+    struct rb_root* rbroot = &(he->root);
     
     dset = (struct data_set *) ALLOC(sizeof(struct data_set));
     INIT_LIST_HEAD(&(dset->entries));
@@ -190,12 +195,13 @@ static struct mynode* first_overlap(struct rb_root* root, offset_t offset, offse
 
 struct data_set *rcache_get(struct fingerprint *fp, offset_t offset, offset_t len) {
     struct data_set* dset = NULL;
-    struct rb_root* rbroot = hash_find(rcache, fp);
+    struct hash_entry *he = hash_find(rcache, fp);
     
-    if (rbroot == NULL) {
+    if (he == NULL) {
         // nothing found, return NULL
         return NULL;
     }
+    struct rb_root* rbroot = &(he->root);
     
     dset = (struct data_set *) ALLOC(sizeof(struct data_set));
     INIT_LIST_HEAD(&(dset->entries));
@@ -226,7 +232,7 @@ struct data_set *rcache_get(struct fingerprint *fp, offset_t offset, offset_t le
 }
 
 
-static int rcache_insert_data(struct rb_root *root, offset_t offset, offset_t len, char* data) {
+static int rcache_insert_data(struct rb_root *root, offset_t offset, offset_t len, char* data, struct hash_entry* h_entry) {
     struct rb_node **new = &(root->rb_node), *parent = NULL;
 
 	/* Figure out where to put new node */
@@ -246,6 +252,7 @@ static int rcache_insert_data(struct rb_root *root, offset_t offset, offset_t le
     my_new->offset = offset;
     my_new->len = len;
     my_new->data = (char *) ALLOC(len);
+    my_new->h_entry = h_entry;
     memcpy(my_new->data, data, len);
     // add LRU entry to head of list
     list_add(&(my_new->lru_entry), &lru_list);
@@ -258,28 +265,46 @@ static int rcache_insert_data(struct rb_root *root, offset_t offset, offset_t le
 }
 
 static void limit_rcache_size() {
-    // TODO
+    if (rcache_size < rcache_limit) {
+        return;
+    }
+    
+    struct mynode *cur, *tmp;
+    list_for_each_entry_safe_reverse(cur, tmp, &lru_list, lru_entry) {
+        if (rcache_size < rcache_limit) {
+            return;
+        }
+        
+        rcache_size -= cur->len;
+        // remove from lru_list
+        list_del(&(cur->lru_entry));
+        // remove from rbtree
+        rb_erase(&(cur->node), &(cur->h_entry->root));
+
+        FREE(cur->data);
+        FREE(cur);
+    }
 }
 
 void rcache_put(struct fingerprint *fpnt, struct data_entry *de) {
-    struct rb_root* rbroot = hash_find(rcache, fpnt);
+    struct hash_entry* he = hash_find(rcache, fpnt);
     
-    if (rbroot == NULL) {
+    
+    if (he == NULL) {
         // new element in hash
         struct list_head* slot_list = &rcache[fp_slot(*fpnt)];
-        struct hash_entry* he = (struct hash_entry *) ALLOC(sizeof(struct hash_entry));
+        he = (struct hash_entry *) ALLOC(sizeof(struct hash_entry));
         he->fpnt = *fpnt;
         he->root = RB_ROOT;
         list_add(&(he->entry), slot_list);
-        
-        rbroot = &(he->root);
     }
+    struct rb_root* rbroot = &(he->root);
     
     // find first overlap
     struct mynode* my = first_overlap(rbroot, de->offset, de->len);
     if (my == NULL) {
         // no overlap, just insert and quit
-        rcache_insert_data(rbroot, de->offset, de->len, de->data);
+        rcache_insert_data(rbroot, de->offset, de->len, de->data, he);
         limit_rcache_size();
         return;
     }
@@ -290,7 +315,7 @@ void rcache_put(struct fingerprint *fpnt, struct data_entry *de) {
         
         my = first_overlap(rbroot, offset, len);
         if (my == NULL) {
-            rcache_insert_data(rbroot, offset, len, de->data + (offset - de->offset));
+            rcache_insert_data(rbroot, offset, len, de->data + (offset - de->offset), he);
             break;
         } else if (my->offset <= offset) {
             // case 1
@@ -311,7 +336,7 @@ void rcache_put(struct fingerprint *fpnt, struct data_entry *de) {
             // case 2
             // insert non-overlapping part
             offset_t seg_len = my->offset - offset;
-            rcache_insert_data(rbroot, offset, seg_len, de->data + (offset - de->offset));
+            rcache_insert_data(rbroot, offset, seg_len, de->data + (offset - de->offset), he);
             offset += seg_len;
             len -= seg_len;
             rcache_size += seg_len;
@@ -325,12 +350,13 @@ void rcache_put(struct fingerprint *fpnt, struct data_entry *de) {
 
 struct data_set *wcache_read(struct fingerprint *fp, offset_t offset, offset_t len) {
     struct data_set* dset = NULL;
-    struct rb_root* rbroot = hash_find(wcache, fp);
-    
-    if (rbroot == NULL) {
+    struct hash_entry* he = hash_find(wcache, fp);
+
+    if (he == NULL) {
         // nothing found, return NULL
         return NULL;
     }
+    struct rb_root* rbroot = &(he->root);
     
     dset = (struct data_set *) ALLOC(sizeof(struct data_set));
     INIT_LIST_HEAD(&(dset->entries));
@@ -390,18 +416,17 @@ static int wcache_insert_data(struct rb_root *root, offset_t offset, offset_t le
 
 // Data input are SAFE to free by users after the function returns.
 int wcache_write(struct fingerprint *fpnt, struct data_entry *de) {
-    struct rb_root* rbroot = hash_find(wcache, fpnt);
-    
-    if (rbroot == NULL) {
+    struct hash_entry* he = hash_find(wcache, fpnt);
+
+    if (he == NULL) {
         // new element in hash
         struct list_head* slot_list = &wcache[fp_slot(*fpnt)];
         struct hash_entry* he = (struct hash_entry *) ALLOC(sizeof(struct hash_entry));
         he->fpnt = *fpnt;
         he->root = RB_ROOT;
         list_add(&(he->entry), slot_list);
-        
-        rbroot = &(he->root);
     }
+    struct rb_root* rbroot = &(he->root);
     
     // find first overlap
     struct mynode* my = first_overlap(rbroot, de->offset, de->len);
