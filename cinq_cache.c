@@ -181,6 +181,41 @@ static struct mynode* first_overlap(struct rb_root* root, offset_t offset, offse
 
 
 
+struct data_set *rcache_get(struct fingerprint *fp, offset_t offset, offset_t len) {
+    struct data_set* dset = NULL;
+    struct rb_root* rbroot = hash_find(rcache, fp);
+    
+    if (rbroot == NULL) {
+        // nothing found, return NULL
+        return NULL;
+    }
+    
+    dset = (struct data_set *) ALLOC(sizeof(struct data_set));
+    INIT_LIST_HEAD(&(dset->entries));
+    
+    struct mynode* my = first_overlap(rbroot, offset, len);
+    while (my) {
+        
+        if (offset + len <= my->offset) {
+            break;
+        }
+        
+        struct data_entry *de = (struct data_entry *) ALLOC(sizeof(struct data_entry));
+        de->data = (char *) ALLOC(my->len);
+        // copy data
+        memcpy(de->data, my->data, my->len);
+        de->offset = my->offset;
+        de->len = my->len;
+        list_add(&(de->entry), &(dset->entries));
+        
+        struct rb_node* next = rb_next(&(my->node));
+        my = container_of(next, struct mynode, node);
+    }
+    
+    return dset;
+}
+
+
 struct data_set *wcache_read(struct fingerprint *fp, offset_t offset, offset_t len) {
     struct data_set* dset = NULL;
     struct rb_root* rbroot = hash_find(wcache, fp);
