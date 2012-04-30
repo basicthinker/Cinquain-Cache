@@ -65,6 +65,13 @@ static struct list_head wcache[N_SLOT];
 // read cache, using a linked hash
 static struct list_head rcache[N_SLOT];
 
+static ssize_t rcache_size = 0;
+
+static ssize_t rcache_limit = 1024 * 1024 * 512; // 512M cache
+
+// newly accessed element at head, old element at tail
+LIST_HEAD(lru_list);
+
 
 // init cache system
 void rwcache_init() {
@@ -200,6 +207,9 @@ struct data_set *rcache_get(struct fingerprint *fp, offset_t offset, offset_t le
             break;
         }
         
+        // move newly accessed element to head
+        list_move(&(my->lru_entry), &lru_list);
+        
         struct data_entry *de = (struct data_entry *) ALLOC(sizeof(struct data_entry));
         de->data = (char *) ALLOC(my->len);
         // copy data
@@ -213,6 +223,103 @@ struct data_set *rcache_get(struct fingerprint *fp, offset_t offset, offset_t le
     }
     
     return dset;
+}
+
+
+static int rcache_insert_data(struct rb_root *root, offset_t offset, offset_t len, char* data) {
+    struct rb_node **new = &(root->rb_node), *parent = NULL;
+
+	/* Figure out where to put new node */
+	while (*new) {
+		struct mynode *this = container_of(*new, struct mynode, node);
+
+		parent = *new;
+		if (offset + len <= this->offset)
+			new = &((*new)->rb_left);
+		else if (this->offset + this->len <= offset)
+			new = &((*new)->rb_right);
+		else
+			return -1;
+	}
+	
+    struct mynode* my_new = (struct mynode *) ALLOC(sizeof(struct mynode));
+    my_new->offset = offset;
+    my_new->len = len;
+    my_new->data = (char *) ALLOC(len);
+    memcpy(my_new->data, data, len);
+    // add LRU entry to head of list
+    list_add(&(my_new->lru_entry), &lru_list);
+
+	/* Add new node and rebalance tree. */
+	rb_link_node(&my_new->node, parent, new);
+	rb_insert_color(&my_new->node, root);
+	
+    return 0;
+}
+
+static void limit_rcache_size() {
+    // TODO
+}
+
+void rcache_put(struct fingerprint *fpnt, struct data_entry *de) {
+    struct rb_root* rbroot = hash_find(rcache, fpnt);
+    
+    if (rbroot == NULL) {
+        // new element in hash
+        struct list_head* slot_list = &rcache[fp_slot(*fpnt)];
+        struct hash_entry* he = (struct hash_entry *) ALLOC(sizeof(struct hash_entry));
+        he->fpnt = *fpnt;
+        he->root = RB_ROOT;
+        list_add(&(he->entry), slot_list);
+        
+        rbroot = &(he->root);
+    }
+    
+    // find first overlap
+    struct mynode* my = first_overlap(rbroot, de->offset, de->len);
+    if (my == NULL) {
+        // no overlap, just insert and quit
+        rcache_insert_data(rbroot, de->offset, de->len, de->data);
+        limit_rcache_size();
+        return;
+    }
+    
+    // split and insert
+    offset_t offset = de->offset, len = de->len;
+    while (len > 0) {
+        
+        my = first_overlap(rbroot, offset, len);
+        if (my == NULL) {
+            rcache_insert_data(rbroot, offset, len, de->data + (offset - de->offset));
+            break;
+        } else if (my->offset <= offset) {
+            // case 1
+            offset_t write_len = len; // the length of data written to overlapped segment
+            if (offset + write_len > my->offset + my->len) {
+                write_len = my->offset + my->len - offset;
+            }
+            
+            // write to overlapped segment
+            memcpy(my->data + (offset - my->offset), de->data + (offset - de->offset), write_len);
+            
+            offset += write_len;
+            len -= write_len;
+            rcache_size += write_len;
+            // go on to next round
+        } else {
+            // offst < my->offset
+            // case 2
+            // insert non-overlapping part
+            offset_t seg_len = my->offset - offset;
+            rcache_insert_data(rbroot, offset, seg_len, de->data + (offset - de->offset));
+            offset += seg_len;
+            len -= seg_len;
+            rcache_size += seg_len;
+            // go on to next round, will be handled immediately by case 1
+        }
+    }
+    
+    limit_rcache_size();
 }
 
 
@@ -373,8 +480,29 @@ void rwcache_fini() {
     
     // fini rcache
     for (i = 0; i < N_SLOT; i++) {
-        struct list_head slot_list = rcache[i];
+        struct list_head* slot_list = &rcache[i];
         // TODO free all the rbtrees in the list
+        struct list_head *cur, *tmp;
+        list_for_each_safe(cur, tmp, slot_list) {
+            struct hash_entry* he = list_entry(cur, struct hash_entry, entry);
+            list_del(&(he->entry));
+            
+            // free all the rbtrees in the list
+            for (;;) {
+                struct rb_node* first = rb_first(&(he->root));
+                if (first == NULL) {
+                    break;
+                }
+                rb_erase(first, &(he->root));
+                
+                struct mynode *node = rb_entry(first, struct mynode, node);
+                FREE(node->data);
+                list_del(&(node->lru_entry)); // remove from lru
+                FREE(node);
+            }
+            
+            FREE(he);
+        }
     }
 }
 
