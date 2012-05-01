@@ -3,7 +3,7 @@ CFLAGS_debug=-ggdb
 CFLAGS_release=-O3
 CFLAGS=$(CFLAGS_debug)
 
-all: runtest
+all: utest
 
 utest: utest.o cinq_cache.o rbtree.o
 	$(CC) $(CFLAGS) $^ -o $@
