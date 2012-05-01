@@ -31,7 +31,7 @@ typedef pthread_mutex_t lock_t;
 
 #endif // __KERNEL__
 
-
+#include "trace.h"
 
 
 struct hash_entry {
@@ -375,6 +375,9 @@ struct data_set *wcache_read(struct fingerprint *fp, offset_t offset, offset_t l
         list_add(&(de->entry), &(dset->entries));
         
         struct rb_node* next = rb_next(&(my->node));
+        if (next == NULL) {
+            break;
+        }
         my = container_of(next, struct mynode, node);
     }
     
@@ -421,7 +424,7 @@ int wcache_write(struct fingerprint *fpnt, struct data_entry *de) {
     if (he == NULL) {
         // new element in hash
         struct list_head* slot_list = &wcache[fp_slot(*fpnt)];
-        struct hash_entry* he = (struct hash_entry *) ALLOC(sizeof(struct hash_entry));
+        he = (struct hash_entry *) ALLOC(sizeof(struct hash_entry));
         he->fpnt = *fpnt;
         he->root = RB_ROOT;
         list_add(&(he->entry), slot_list);
