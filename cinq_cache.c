@@ -345,6 +345,9 @@ void rcache_put(struct fingerprint *fpnt, struct data_entry *de) {
             // write to overlapped segment
             memcpy(my->data + (offset - my->offset), de->data + (offset - de->offset), write_len);
             
+            // move newly accessed element to head
+            list_move(&(my->lru_entry), &lru_list);
+            
             offset += write_len;
             len -= write_len;
             rcache_size += write_len;
