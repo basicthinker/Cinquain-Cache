@@ -4,6 +4,13 @@
 
 #include <linux/rbtree.h>
 #include <linux/spinlock.h>
+#include <linux/slab.h>
+#include <linux/vmalloc.h>
+
+// Either users or the internal should use the predefined malloc/free functions.
+#define ALLOC(nbytes)   ((nbytes) <= PAGE_SIZE ? kmalloc((nbytes), GFP_KERNEL) : vmalloc(nbytes))
+#define FREE(ptr, size)       ((nbytes) <= PAGE_SIZE ? kfree(ptr) : vfree(ptr))
+
 
 typedef spinlock_t lock_t;
 
@@ -22,6 +29,11 @@ typedef spinlock_t lock_t;
 #include <pthread.h>
 #include <string.h> // for memcpy
 #include "rbtree.h"
+
+
+#define ALLOC(nbytes)   malloc(nbytes)
+#define FREE(ptr, size)       free(ptr)
+
 
 typedef pthread_mutex_t lock_t;
 
@@ -118,13 +130,13 @@ void free_data_set(struct data_set* ds, int free_data) {
         struct data_entry* de = list_entry(cur, struct data_entry, entry);
         list_del(&(de->entry));
         if (free_data) {
-            FREE(de->data);
+            FREE(de->data, de->len);
         }
-        FREE(de);
+        FREE(de, sizeof(struct data_entry));
     }
     
     // release the data set itself
-    FREE(ds);
+    FREE(ds, sizeof(struct data_set));
 }
 
 // Returns data set sorted by offsets of its entries without overlaps.
@@ -160,7 +172,7 @@ struct data_set *wcache_collect(struct fingerprint *fp) {
         de->len = node->len;
         list_add(&(de->entry), &(dset->entries));
         
-        FREE(node);
+        FREE(node, sizeof(struct mynode));
     }
     
     return dset;
@@ -281,8 +293,8 @@ static void limit_rcache_size() {
         // remove from rbtree
         rb_erase(&(cur->node), &(cur->h_entry->root));
 
-        FREE(cur->data);
-        FREE(cur);
+        FREE(cur->data, cur->len);
+        FREE(cur, sizeof(struct mynode));
     }
 }
 
@@ -498,11 +510,11 @@ void rwcache_fini() {
                 rb_erase(first, &(he->root));
                 
                 struct mynode *node = rb_entry(first, struct mynode, node);
-                FREE(node->data);
-                FREE(node);
+                FREE(node->data, node->len);
+                FREE(node, sizeof(struct mynode));
             }
             
-            FREE(he);
+            FREE(he, sizeof(struct hash_entry));
         }
     }
     
@@ -524,12 +536,12 @@ void rwcache_fini() {
                 rb_erase(first, &(he->root));
                 
                 struct mynode *node = rb_entry(first, struct mynode, node);
-                FREE(node->data);
+                FREE(node->data, node->len);
                 list_del(&(node->lru_entry)); // remove from lru
-                FREE(node);
+                FREE(node, sizeof(struct mynode));
             }
             
-            FREE(he);
+            FREE(he, sizeof(struct hash_entry));
         }
     }
 }

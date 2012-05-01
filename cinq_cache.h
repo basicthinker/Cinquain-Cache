@@ -31,18 +31,11 @@
 
 #ifdef __KERNEL__
 #include <linux/list.h>
-#include <linux/slab.h>
 
-// Either users or the internal should use the predefined malloc/free functions.
-#define ALLOC(nbytes)   kmalloc(nbytes, GFP_KERNEL)
-#define FREE(ptr)       kfree(ptr)
+#else // user space
 
-#else
 #include <stddef.h> // for NULL
 #include "list.h"
-
-#define ALLOC(nbytes)   malloc(nbytes)
-#define FREE(ptr)       free(ptr)
 
 #endif // __KERNEL__
 
