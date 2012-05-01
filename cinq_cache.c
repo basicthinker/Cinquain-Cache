@@ -124,6 +124,9 @@ static struct hash_entry* hash_find(struct list_head* htab, struct fingerprint *
 
 
 void free_data_set(struct data_set* ds, int free_data) {
+    if (ds == NULL) {
+        return;
+    }
     struct list_head *cur, *tmp;
     
     list_for_each_safe(cur, tmp, &(ds->entries)) {
@@ -237,6 +240,9 @@ struct data_set *rcache_get(struct fingerprint *fp, offset_t offset, offset_t le
         list_add(&(de->entry), &(dset->entries));
         
         struct rb_node* next = rb_next(&(my->node));
+        if (next == NULL) {
+            break;
+        }
         my = container_of(next, struct mynode, node);
     }
     
