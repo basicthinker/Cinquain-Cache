@@ -71,8 +71,7 @@ struct mynode {
 
 
 // input: fingerprint, return: the slot possibly containing the hash entry
-#define fp_slot(fpnt)     (((((int)(fpnt).value[0]) << 24) + (((int)(fpnt).value[1]) << 16) + \
-							(((int)(fpnt).value[2]) << 8) + (((int)(fpnt).value[3]) << 0)) % N_SLOT)
+#define fp_slot(fpnt)     (*((int *)(fpnt).value) % N_SLOT)
 
 
 // write cache, using a linked hash
