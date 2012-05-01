@@ -77,10 +77,10 @@ struct data_set {
 void free_data_set(struct data_set* ds, int free_data);
 
 // init cache system
-void rwcache_init();
+void rwcache_init(void);
 
 // finalize cache system
-void rwcache_fini();
+void rwcache_fini(void);
 
 // Returns data set sorted by offsets of its entries without overlaps.
 // Users take charge of deallocation of returned data.
