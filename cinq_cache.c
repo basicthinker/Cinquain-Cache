@@ -9,7 +9,7 @@
 
 // Either users or the internal should use the predefined malloc/free functions.
 #define ALLOC(nbytes)   ((nbytes) <= PAGE_SIZE ? kmalloc((nbytes), GFP_KERNEL) : vmalloc(nbytes))
-#define FREE(ptr, size)       ((nbytes) <= PAGE_SIZE ? kfree(ptr) : vfree(ptr))
+#define FREE(ptr, size)       ((size) <= PAGE_SIZE ? kfree(ptr) : vfree(ptr))
 
 
 typedef spinlock_t lock_t;
